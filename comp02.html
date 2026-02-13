@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Benchmark Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-primary: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --accent-mac: #3498db;
+            --accent-win: #9b59b6;
+            --font-main: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 { font-weight: 300; margin-bottom: 10px; }
+        p.subtitle { color: var(--text-secondary); }
+
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card.full-width { grid-column: 1 / -1; }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .card h2 { font-size: 1.2rem; font-weight: 600; }
+
+        /* Controles */
+        select, button {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        button:hover, select:hover { border-color: var(--accent-mac); }
+        
+        button.active {
+            background-color: var(--accent-mac);
+            color: white;
+            border-color: var(--accent-mac);
+        }
+
+        /* Canvas Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .card-header { flex-direction: column; gap: 10px; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Benchmarks de Modelos LLM</h1>
+        <p class="subtitle">Análisis comparativo de rendimiento entre Mac Mini y Windows</p>
+    </header>
+
+    <main class="dashboard-grid">
+        <section class="kpi-container full-width">
+    <div class="kpi-card">
+        <div class="icon">🚀</div>
+        <div class="kpi-content">
+            <h3>Récord de Velocidad</h3>
+            <p id="kpi-fastest-val" class="kpi-value">Calculando...</p>
+            <p id="kpi-fastest-name" class="kpi-sub">...</p>
+        </div>
+    </div>
+    
+    <div class="kpi-card">
+        <div class="icon">💎</div>
+        <div class="kpi-content">
+            <h3>Más Económico</h3>
+            <p id="kpi-cheapest-val" class="kpi-value">Calculando...</p>
+            <p id="kpi-cheapest-name" class="kpi-sub">...</p>
+        </div>
+    </div>
+
+    <div class="kpi-card">
+        <div class="icon">🏆</div>
+        <div class="kpi-content">
+            <h3>Sistema Ganador</h3>
+            <p id="kpi-system-val" class="kpi-value">Calculando...</p>
+            <p id="kpi-system-diff" class="kpi-sub">Promedio Global</p>
+        </div>
+    </div>
+</section>
+        <article class="card">
+            <div class="card-header">
+                <h2>⚡ Batalla del Hardware</h2>
+                <select id="filter-difficulty">
+                    <option value="Fácil">Dificultad: Fácil</option>
+                    <option value="Medio">Dificultad: Medio</option>
+                    <option value="Difícil">Dificultad: Difícil</option>
+                </select>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-bar"></canvas>
+            </div>
+        </article>
+
+        <article class="card">
+            <div class="card-header">
+                <h2>💰 Eficiencia: Coste vs Velocidad</h2>
+                </div>
+            <div class="chart-container">
+                <canvas id="chart-scatter"></canvas>
+            </div>
+        </article>
+
+        <article class="card full-width">
+            <div class="card-header">
+                <h2>📈 Estabilidad por Dificultad</h2>
+                <div>
+                    <label style="margin-right: 10px; font-size: 0.9rem; color: #666;">Métrica:</label>
+                    <button id="btn-tokens" class="active">Tokens/s</button>
+                    <button id="btn-cost">Coste</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-line"></canvas>
+            </div>
+        </article>
+
+    </main>
+
+    <script>
+        // 1. LOS DATOS (Tu JSON limpio)
+        const benchmarkData = [
+          { "id": 1, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Mac Mini", "dificultad": "Fácil", "tokens_segundo": 41.85, "coste": 210, "ptk": 0.71, "parametros": "7B", "acierta": true },
+          { "id": 2, "modelo": "qwen/qwen3-vl-4b", "sistema": "Mac Mini", "dificultad": "Fácil", "tokens_segundo": 39.03, "coste": 164, "ptk": 0.93, "parametros": "4B", "acierta": true },
+          { "id": 3, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Mac Mini", "dificultad": "Fácil", "tokens_segundo": 39.88, "coste": 1147, "ptk": 1.18, "parametros": "15B", "acierta": true },
+          { "id": 4, "modelo": "google/gemma-3-4b", "sistema": "Mac Mini", "dificultad": "Fácil", "tokens_segundo": 41.42, "coste": 139, "ptk": 0.75, "parametros": "12B", "acierta": true },
+          { "id": 5, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Windows", "dificultad": "Fácil", "tokens_segundo": 69.47, "coste": 315, "ptk": 0.12, "parametros": "7B", "acierta": true },
+          { "id": 6, "modelo": "qwen/qwen3-vl-4b", "sistema": "Windows", "dificultad": "Fácil", "tokens_segundo": 111.16, "coste": 220, "ptk": 0.05, "parametros": "4B", "acierta": true },
+          { "id": 7, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Windows", "dificultad": "Fácil", "tokens_segundo": 41.81, "coste": 688, "ptk": 0.18, "parametros": "15B", "acierta": true },
+          { "id": 8, "modelo": "google/gemma-3-4b", "sistema": "Windows", "dificultad": "Fácil", "tokens_segundo": 45.51, "coste": 225, "ptk": 0.21, "parametros": "12B", "acierta": true },
+          { "id": 9, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Mac Mini", "dificultad": "Medio", "tokens_segundo": 43.19, "coste": 211, "ptk": 0.24, "parametros": "7B", "acierta": true },
+          { "id": 10, "modelo": "qwen/qwen3-vl-4b", "sistema": "Mac Mini", "dificultad": "Medio", "tokens_segundo": 39.56, "coste": 212, "ptk": 0.56, "parametros": "4B", "acierta": true },
+          { "id": 11, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Mac Mini", "dificultad": "Medio", "tokens_segundo": 40.88, "coste": 1033, "ptk": 0.31, "parametros": "15B", "acierta": true },
+          { "id": 12, "modelo": "google/gemma-3-4b", "sistema": "Mac Mini", "dificultad": "Medio", "tokens_segundo": 41.44, "coste": 171, "ptk": 0.30, "parametros": "12B", "acierta": true },
+          { "id": 13, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Windows", "dificultad": "Medio", "tokens_segundo": 70.51, "coste": 175, "ptk": 0.20, "parametros": "7B", "acierta": true },
+          { "id": 14, "modelo": "qwen/qwen3-vl-4b", "sistema": "Windows", "dificultad": "Medio", "tokens_segundo": 105.64, "coste": 262, "ptk": 0.11, "parametros": "4B", "acierta": true },
+          { "id": 15, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Windows", "dificultad": "Medio", "tokens_segundo": 41.30, "coste": 523, "ptk": 0.06, "parametros": "15B", "acierta": true },
+          { "id": 16, "modelo": "google/gemma-3-4b", "sistema": "Windows", "dificultad": "Medio", "tokens_segundo": 45.58, "coste": 243, "ptk": 0.15, "parametros": "12B", "acierta": true },
+          { "id": 17, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Mac Mini", "dificultad": "Difícil", "tokens_segundo": 41.87, "coste": 320, "ptk": 0.29, "parametros": "7B", "acierta": true },
+          { "id": 18, "modelo": "qwen/qwen3-vl-4b", "sistema": "Mac Mini", "dificultad": "Difícil", "tokens_segundo": 38.87, "coste": 648, "ptk": 0.32, "parametros": "4B", "acierta": true },
+          { "id": 19, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Mac Mini", "dificultad": "Difícil", "tokens_segundo": 39.92, "coste": 2112, "ptk": 0.31, "parametros": "15B", "acierta": true },
+          { "id": 20, "modelo": "google/gemma-3-4b", "sistema": "Mac Mini", "dificultad": "Difícil", "tokens_segundo": 41.19, "coste": 429, "ptk": 0.38, "parametros": "12B", "acierta": true },
+          { "id": 21, "modelo": "Ibm/Granite-4-h-tiny", "sistema": "Windows", "dificultad": "Difícil", "tokens_segundo": 69.67, "coste": 301, "ptk": 0.13, "parametros": "7B", "acierta": true },
+          { "id": 22, "modelo": "qwen/qwen3-vl-4b", "sistema": "Windows", "dificultad": "Difícil", "tokens_segundo": 108.39, "coste": 702, "ptk": 0.07, "parametros": "4B", "acierta": true },
+          { "id": 23, "modelo": "microsoft/phi-4-mini-reasonig", "sistema": "Windows", "dificultad": "Difícil", "tokens_segundo": 41.09, "coste": 1923, "ptk": 0.16, "parametros": "15B", "acierta": true },
+          { "id": 24, "modelo": "google/gemma-3-4b", "sistema": "Windows", "dificultad": "Difícil", "tokens_segundo": 44.61, "coste": 464, "ptk": 0.16, "parametros": "12B", "acierta": true }
+        ];
+
+        // 2. CONFIGURACIÓN GLOBAL
+        Chart.defaults.font.family = "'Segoe UI', Roboto, sans-serif";
+        Chart.defaults.color = '#2c3e50';
+        
+        // Colores consistentes
+        const COLORS = {
+            mac: 'rgba(52, 152, 219, 0.7)',
+            macBorder: 'rgba(52, 152, 219, 1)',
+            win: 'rgba(155, 89, 182, 0.7)',
+            winBorder: 'rgba(155, 89, 182, 1)'
+        };
+
+        // 3. INSTANCIAS DE GRÁFICOS
+        let barChart, scatterChart, lineChart;
+
+        // --- INICIALIZACIÓN ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initBarChart();
+            initScatterChart();
+            initLineChart();
+        });
+
+        // ==========================================
+        // GRÁFICO 1: BARRAS AGRUPADAS (Hardware)
+        // ==========================================
+        function initBarChart() {
+            const ctx = document.getElementById('chart-bar').getContext('2d');
+            const select = document.getElementById('filter-difficulty');
+
+            // Función interna para preparar datos según el filtro
+            const getData = (difficulty) => {
+                // 1. Obtener modelos únicos
+                const models = [...new Set(benchmarkData.map(d => d.modelo))];
+                
+                // 2. Mapear datos asegurando el orden correcto
+                const macData = models.map(m => {
+                    const found = benchmarkData.find(d => d.modelo === m && d.sistema === 'Mac Mini' && d.dificultad === difficulty);
+                    return found ? found.tokens_segundo : 0;
+                });
+
+                const winData = models.map(m => {
+                    const found = benchmarkData.find(d => d.modelo === m && d.sistema === 'Windows' && d.dificultad === difficulty);
+                    return found ? found.tokens_segundo : 0;
+                });
+
+                return { labels: models, mac: macData, win: winData };
+            };
+
+            // Crear Gráfico
+            const initialData = getData('Fácil');
+            
+            barChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: initialData.labels,
+                    datasets: [
+                        { label: 'Mac Mini', data: initialData.mac, backgroundColor: COLORS.mac, borderColor: COLORS.macBorder, borderWidth: 1 },
+                        { label: 'Windows', data: initialData.win, backgroundColor: COLORS.win, borderColor: COLORS.winBorder, borderWidth: 1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'Tokens / Segundo' } } }
+                }
+            });
+
+            // Event Listener para Interactividad
+            select.addEventListener('change', (e) => {
+                const newData = getData(e.target.value);
+                barChart.data.datasets[0].data = newData.mac;
+                barChart.data.datasets[1].data = newData.win;
+                barChart.update();
+            });
+        }
+
+        // ==========================================
+        // GRÁFICO 2: SCATTER PLOT (Coste vs Velocidad)
+        // ==========================================
+        function initScatterChart() {
+            const ctx = document.getElementById('chart-scatter').getContext('2d');
+
+            // Separar datos en dos series (Mac y Windows)
+            const macPoints = benchmarkData
+                .filter(d => d.sistema === 'Mac Mini')
+                .map(d => ({ x: d.coste, y: d.tokens_segundo, model: d.modelo, params: d.parametros }));
+
+            const winPoints = benchmarkData
+                .filter(d => d.sistema === 'Windows')
+                .map(d => ({ x: d.coste, y: d.tokens_segundo, model: d.modelo, params: d.parametros }));
+
+            scatterChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        { label: 'Mac Mini', data: macPoints, backgroundColor: COLORS.mac, borderColor: COLORS.macBorder },
+                        { label: 'Windows', data: winPoints, backgroundColor: COLORS.win, borderColor: COLORS.winBorder }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Coste (unidades)' } },
+                        y: { title: { display: true, text: 'Tokens / Segundo' } }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const raw = context.raw;
+                                    return `${raw.model} (${raw.params}): ${raw.y} t/s, Coste: ${raw.x}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ==========================================
+        // GRÁFICO 3: LINE CHART (Estabilidad)
+        // ==========================================
+        function initLineChart() {
+            const ctx = document.getElementById('chart-line').getContext('2d');
+            const btnTokens = document.getElementById('btn-tokens');
+            const btnCost = document.getElementById('btn-cost');
+            
+            const difficulties = ['Fácil', 'Medio', 'Difícil'];
+            const models = [...new Set(benchmarkData.map(d => d.modelo))];
+            
+            // Colores para las distintas líneas (modelos)
+            const lineColors = ['#e74c3c', '#2ecc71', '#f1c40f', '#34495e'];
+
+            // Función para construir datasets según métrica
+            const getDatasets = (metric) => {
+                return models.map((model, index) => {
+                    // Obtenemos los datos en el orden de dificultad correcto
+                    const dataPoints = difficulties.map(diff => {
+                        // Promediamos entre Mac y Windows para una visión general del MODELO
+                        const entries = benchmarkData.filter(d => d.modelo === model && d.dificultad === diff);
+                        const sum = entries.reduce((acc, curr) => acc + curr[metric], 0);
+                        return sum / entries.length;
+                    });
+
+                    return {
+                        label: model,
+                        data: dataPoints,
+                        borderColor: lineColors[index % lineColors.length],
+                        backgroundColor: lineColors[index % lineColors.length],
+                        tension: 0.2 // Suavizado de línea
+                    };
+                });
+            };
+
+            lineChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: difficulties,
+                    datasets: getDatasets('tokens_segundo')
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Promedio Tokens / Segundo' } }
+                    }
+                }
+            });
+
+            // Lógica de cambio de métrica
+            const updateMetric = (metric, label, activeBtn) => {
+                lineChart.data.datasets = getDatasets(metric);
+                lineChart.options.scales.y.title.text = label;
+                lineChart.update();
+
+                // Toggle clases botones
+                document.querySelectorAll('.card button').forEach(b => b.classList.remove('active'));
+                activeBtn.classList.add('active');
+            };
+
+            btnTokens.addEventListener('click', (e) => updateMetric('tokens_segundo', 'Promedio Tokens / Segundo', e.target));
+            btnCost.addEventListener('click', (e) => updateMetric('coste', 'Promedio Coste', e.target));
+        }
+    </script>
+</body>
+</html>
